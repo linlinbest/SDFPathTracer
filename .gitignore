@@ -207,7 +207,6 @@ install_manifest.txt
 *.lai
 *.la
 *.a
-*.lib
 
 # Executables
 *.exe
@@ -276,7 +275,6 @@ artifacts/
 *_i.h
 *.ilk
 *.meta
-*.obj
 *.pch
 *.pdb
 *.pgc
