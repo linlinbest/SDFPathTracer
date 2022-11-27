@@ -559,7 +559,7 @@ __host__ __device__ float sdfIntersectionTest(const Geom* geoms, const SDF* sdf,
         if (currSDFGrid == nullptr)
         {
             //return -1.f;
-            t += 0.5f;
+            t += 0.25f;
             continue;
         }
 

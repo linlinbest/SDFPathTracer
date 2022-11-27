@@ -247,7 +247,7 @@ void pathtraceInit(Scene* scene) {
 		SDF sdf;
 		sdf.minCorner = glm::vec3(-5.5f, -0.5f, -5.5f);
 		sdf.maxCorner = glm::vec3(5.5f, 10.5f, 5.5f);
-		sdf.resolution = glm::ivec3(885);
+		sdf.resolution = glm::ivec3(352);
 		sdf.gridExtent = (sdf.maxCorner - sdf.minCorner) / glm::vec3(sdf.resolution);
 
 		cudaMalloc(&dev_SDF, sizeof(SDF));
