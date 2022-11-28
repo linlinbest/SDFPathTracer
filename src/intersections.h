@@ -409,18 +409,116 @@ float udfTriangle(glm::vec3 p, glm::vec3 a, glm::vec3 b, glm::vec3 c)
         glm::dot(nor, pa) * glm::dot(nor, pa) / glm::dot(nor, nor));
 }
 
-
-//__global__ void generateSDF(const SDF* sdf, SDFGrid* SDFGrids, const BVHNode* bvhNodes, const int bvhNodes_size)
+//__host__ __device__
+//bool intersectSphereBox(glm::vec3 lower, glm::vec3 upper, glm::vec3 p, float radius2)
 //{
-//    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-//    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
-//    int z = (blockIdx.z * blockDim.z) + threadIdx.z;
-//
-//    int idx = z * sdf->resolution.x * sdf->resolution.y + y * sdf->resolution.x + x;
-//
-//
-//    SDFGrids[idx].material;
+//    glm::vec3 q = glm::clamp(p, lower, upper);
+//    return glm::dot(p - q, p - q) <= radius2;
 //}
+//
+//__host__ __device__
+//bool intersectSphereTriangle(glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 p, float r2)
+//{
+//    float udf = udfTriangle(p, a, b, c);
+//    return udf * udf <= r2;
+//}
+
+__host__ __device__
+float sdBox(glm::vec3 p, glm::vec3 b)
+{
+    glm::vec3 q = abs(p) - b;
+    return glm::length(glm::max(q, 0.0f)) + glm::min(glm::max(q.x, glm::max(q.y, q.z)), 0.0f);
+}
+
+__host__ __device__
+float udfBox(glm::vec3 p, glm::vec3 minCorner, glm::vec3 maxCorner)
+{
+    glm::vec3 center = (maxCorner + minCorner) / 2.f;
+    glm::vec3 halfScale = maxCorner - center;
+    return sdBox(p - center, halfScale);
+}
+
+
+__global__ void generateSDFwithBVH(const SDF* sdf, SDFGrid* SDFGrids, const BVHNode* bvhNodes, const int bvhNodes_size, const Geom* geoms)
+{
+    int x = (blockIdx.x * blockDim.x) + threadIdx.x;
+    int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+    int z = (blockIdx.z * blockDim.z) + threadIdx.z;
+
+    if (x >= sdf->resolution.x || y >= sdf->resolution.y || z >= sdf->resolution.z) return;
+    int idx = z * sdf->resolution.x * sdf->resolution.y + y * sdf->resolution.x + x;
+
+
+    glm::vec3 voxelPos = glm::vec3(sdf->minCorner.x + sdf->gridExtent.x * (float(x) + 0.5f),
+                                   sdf->minCorner.y + sdf->gridExtent.y * (float(y) + 0.5f),
+                                   sdf->minCorner.z + sdf->gridExtent.z * (float(z) + 0.5f));
+    
+    // find closest triangle
+    int currIdx = 0;
+
+    int idxToVisit[64];
+    int toVisitOffset = 0;
+
+    idxToVisit[toVisitOffset++] = 0;
+
+    const Triangle* minTriangle = nullptr;
+    float minUdf = FLT_MAX;
+
+    while (toVisitOffset > 0)
+    {
+        currIdx = idxToVisit[--toVisitOffset];
+        //if (currIdx >= bvhNodes_size) continue;
+
+        if (!bvhNodes[currIdx].isLeaf)
+        {
+            /*float rayLength = boxIntersectionTest(bvhNodes[currIdx].minCorner, bvhNodes[currIdx].maxCorner, r);
+            if (rayLength == -1.f || rayLength > minUdf) continue;*/
+
+            float distToBox = udfBox(voxelPos, bvhNodes[currIdx].minCorner, bvhNodes[currIdx].maxCorner);
+            if (distToBox > minUdf) continue;
+
+            int leftIdx = currIdx * 2 + 1;
+            int rightIdx = leftIdx + 1;
+
+            idxToVisit[toVisitOffset++] = rightIdx;
+            idxToVisit[toVisitOffset++] = leftIdx;
+        }
+        else
+        {
+            if (!bvhNodes[currIdx].hasFace) continue;
+            const Triangle* face = &bvhNodes[currIdx].face;
+            float t = udfTriangle(voxelPos, face->point1, face->point2, face->point3);
+
+            if (minUdf > t)
+            {
+                minTriangle = &bvhNodes[currIdx].face;
+                minUdf = t;
+            }
+        }
+    }
+
+
+    // will crash without this
+    if (minTriangle == nullptr) return;
+    int geomId = minTriangle->geomId;
+
+    glm::vec3 triCenter = (minTriangle->point1 + minTriangle->point2 + minTriangle->point3) / 3.f;
+    glm::vec3 worldNor = glm::normalize(triCenter - voxelPos);
+    glm::vec3 localNor = multiplyMV(geoms[geomId].inverseTransform, glm::vec4(worldNor, 0.f));
+
+    glm::vec3 localtriNor = multiplyMV(geoms[geomId].inverseTransform, glm::vec4(minTriangle->normal1, 0.f));
+    // if inside
+    if (glm::dot(localNor, localtriNor) > 0.f)
+    {
+        SDFGrids[idx].dist = -minUdf;
+    }
+    else
+    {
+        SDFGrids[idx].dist = minUdf;
+    }
+
+    SDFGrids[idx].geomId = minTriangle->geomId;
+}
 
 
 // brute force
@@ -545,7 +643,7 @@ __host__ __device__ float sdfIntersectionTest(const Geom* geoms, const SDF* sdf,
     //normal = estimateNormal(r.origin, sdf, SDFGrids);
 
     //float t = startGrid->dist;
-    float t = 0.2f;
+    float t = 0.05f;
 
     int maxMarchSteps = 64;
     glm::vec3 lastRayMarchPos = r.origin;
@@ -559,7 +657,7 @@ __host__ __device__ float sdfIntersectionTest(const Geom* geoms, const SDF* sdf,
         if (currSDFGrid == nullptr)
         {
             //return -1.f;
-            t += 0.5f;
+            t += 0.7f;
             continue;
         }
 

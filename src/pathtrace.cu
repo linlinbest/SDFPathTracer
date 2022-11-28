@@ -180,6 +180,15 @@ void pathtraceInit(Scene* scene) {
 	hst_scene = scene;
 
 #if USE_BVH_FOR_INTERSECTION
+
+#if USE_SDF_INTERSECTION
+	for (int i = 0; i < scene->faces.size(); i++)
+	{
+		int geomId = scene->faces[i].geomId;
+		scene->faces[i].localToWorld(scene->geoms[geomId]);
+	}
+#endif
+
 	BVHTree bvhTree;
 	bvhTree.build(hst_scene->faces);
 	bvhNodes_size = bvhTree.bvhNodes.size();
@@ -203,12 +212,6 @@ void pathtraceInit(Scene* scene) {
 	cudaMemcpy(dev_bvhNodes, bvhTree.bvhNodes.data(), bvhTree.bvhNodes.size() * sizeof(BVHNode), cudaMemcpyHostToDevice);
 
 #if USE_SDF_INTERSECTION
-	for (int i = 0; i < scene->faces.size(); i++)
-	{
-		int geomId = scene->faces[i].geomId;
-		scene->faces[i].localToWorld(scene->geoms[geomId]);
-	}
-
 	cudaMalloc(&dev_faces, scene->faces.size() * sizeof(Triangle));
 	cudaMemcpy(dev_faces, scene->faces.data(), scene->faces.size() * sizeof(Triangle), cudaMemcpyHostToDevice);
 #endif
@@ -247,7 +250,7 @@ void pathtraceInit(Scene* scene) {
 		SDF sdf;
 		sdf.minCorner = glm::vec3(-5.5f, -0.5f, -5.5f);
 		sdf.maxCorner = glm::vec3(5.5f, 10.5f, 5.5f);
-		sdf.resolution = glm::ivec3(885);
+		sdf.resolution = glm::ivec3(352);
 		sdf.gridExtent = (sdf.maxCorner - sdf.minCorner) / glm::vec3(sdf.resolution);
 
 		cudaMalloc(&dev_SDF, sizeof(SDF));
@@ -262,10 +265,10 @@ void pathtraceInit(Scene* scene) {
 			(sdf.resolution.y + blockSize3d.y - 1) / blockSize3d.y,
 			(sdf.resolution.z + blockSize3d.z - 1) / blockSize3d.z);
 
-		//generateSDF<<<blocksPerGrid3d, blockSize3d>>>(dev_SDF, dev_SDFGrids, dev_bvhNodes, bvhNodes_size);
+		generateSDFwithBVH<<<blocksPerGrid3d, blockSize3d>>>(dev_SDF, dev_SDFGrids, dev_bvhNodes, bvhNodes_size, dev_geoms);
 
 		// brute force
-		generateSDF << <blocksPerGrid3d, blockSize3d >> > (dev_SDF, dev_SDFGrids, dev_faces, scene->faces.size(), dev_geoms);
+		//generateSDF << <blocksPerGrid3d, blockSize3d >> > (dev_SDF, dev_SDFGrids, dev_faces, scene->faces.size(), dev_geoms);
 	}
 	
 
