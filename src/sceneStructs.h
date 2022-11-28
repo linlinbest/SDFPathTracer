@@ -7,6 +7,39 @@
 
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 #define USE_BVH_FOR_INTERSECTION 1
+//Just for testing
+#define SAMPLE_COUNT 100
+
+//Hemisphere Harmonic Coefficient
+//reference: 
+//(0,0)
+#define HSH_COEFFICIENT_0 0.398942280f
+//(-1,1)
+#define HSH_COEFFICIENT_1 0.488602512f
+//(0,1)
+#define HSH_COEFFICIENT_2 0.690988299f
+//(1,1)
+#define HSH_COEFFICIENT_3 0.488602512f
+//(-2,2)
+#define HSH_COEFFICIENT_4 0.182091405f
+//(-1,2)
+#define HSH_COEFFICIENT_5 0.364182810f
+//(0,2)
+#define HSH_COEFFICIENT_6 0.892062058f
+//(1,2)
+#define HSH_COEFFICIENT_7 0.364182810f
+//(2,2)
+#define HSH_COEFFICIENT_8 0.182091405f
+
+#define PI 3.141592653
+
+static const float HemisphereHarmonicCoefficient[9] = { HSH_COEFFICIENT_0 ,HSH_COEFFICIENT_1 ,HSH_COEFFICIENT_2 ,
+HSH_COEFFICIENT_3 ,HSH_COEFFICIENT_4 ,HSH_COEFFICIENT_5 ,HSH_COEFFICIENT_6,HSH_COEFFICIENT_7,HSH_COEFFICIENT_8 };
+
+void getCorrespondHemisphereHarmonicBasisFunc(int num)
+{
+
+}
 
 enum GeomType {
     SPHERE,
@@ -109,6 +142,9 @@ struct PathSegment {
     glm::vec3 color;
     int pixelIndex;
     int remainingBounces;
+    //map for diffuse for test
+    glm::vec3 diffuseColorRadianceCache[9];
+    //glossiness need higher level
 };
 
 // Use with a corresponding PathSegment to do:

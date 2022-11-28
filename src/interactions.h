@@ -1,6 +1,7 @@
 #pragma once
 
 #include "intersections.h"
+#include "sceneStructs.h"
 
 // CHECKITOUT
 /**
@@ -140,5 +141,61 @@ void scatterRay(
         pathSegment.color *= m.color;
         pathSegment.ray.origin = intersect;
     }
+
+}
+//Added by Hanlin
+
+__host__ __device__
+void precomputeRadianceCache(
+    PathSegment& pathSegment,
+    glm::vec3 intersect,
+    glm::vec3 normal,
+    const Material& m,
+    thrust::default_random_engine& rng)
+{
+    thrust::uniform_real_distribution<float> u01(0, 1);
+    double factor = 2 * PI/SAMPLE_COUNT;
+    // generate n sample light
+    for (int i = 0; i < SAMPLE_COUNT; i++)
+    {
+        //generate random sample ray direction
+        //This is to compute radiance cache
+
+        //Turn it into sphere coordinates
+        //Get sample ray's intersection lighting results
+
+        float up = sqrt(u01(rng)); // cos(theta)
+        float over = sqrt(1 - up * up); // sin(theta)
+        float around = u01(rng) * TWO_PI;
+
+        glm::vec3 directionNotNormal;
+        if (abs(normal.x) < SQRT_OF_ONE_THIRD) {
+            directionNotNormal = glm::vec3(1, 0, 0);
+        }
+        else if (abs(normal.y) < SQRT_OF_ONE_THIRD) {
+            directionNotNormal = glm::vec3(0, 1, 0);
+        }
+        else {
+            directionNotNormal = glm::vec3(0, 0, 1);
+        }
+
+        // Use not-normal direction to generate two perpendicular directions
+        glm::vec3 perpendicularDirection1 =
+            glm::normalize(glm::cross(normal, directionNotNormal));
+        glm::vec3 perpendicularDirection2 =
+            glm::normalize(glm::cross(normal, perpendicularDirection1));
+
+        glm::vec3 rayDir =  up * normal
+            + cos(around) * over * perpendicularDirection1
+            + sin(around) * over * perpendicularDirection2;
+
+        //Get the generated rayDir's intersection BSDF cache
+
+
+
+    }
+    //pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
+    //pathSegment.color *= m.color;
+    //pathSegment.ray.origin = intersect;
 
 }
