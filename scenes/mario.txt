@@ -159,3 +159,17 @@ material 2
 TRANS       2 2 0
 ROTAT       0 0 0
 SCALE       1 1 1
+
+OBJECT 9
+../scenes/objFiles/bunny.obj
+material 2
+TRANS       -2 2 0
+ROTAT       0 0 0
+SCALE       1 1 1
+
+OBJECT 10
+../scenes/objFiles/bunny.obj
+material 2
+TRANS       2 4 0
+ROTAT       0 0 0
+SCALE       1 1 1
