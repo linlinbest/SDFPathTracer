@@ -8,7 +8,7 @@
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 #define USE_BVH_FOR_INTERSECTION 1
 //Just for testing
-#define SAMPLE_COUNT 100
+#define SAMPLE_COUNT 500
 
 //Hemisphere Harmonic Coefficient
 //reference: 
@@ -145,6 +145,7 @@ struct PathSegment {
     //map for diffuse for test
     glm::vec3 diffuseColorRadianceCache[9];
     //glossiness need higher level
+    glm::vec3 radianceCache;
 };
 
 // Use with a corresponding PathSegment to do:
@@ -175,4 +176,29 @@ struct SDF
 struct SDFGrid {
     float dist;
     int geomId;
+};
+
+struct RadianceCache
+{
+    glm::vec3 position;
+    glm::vec3 localUpVec;
+    glm::vec3 localNormalVec;
+    glm::vec3 localRightVec;
+    glm::vec3 radianceHSH;
+    glm::vec3 x_derivative;
+    glm::vec3 y_derivative;
+    RadianceCache()
+    {
+        position=glm::vec3(0,0,0);
+        localUpVec= glm::vec3(0, 0, 0);
+        localNormalVec= glm::vec3(0, 0, 0);
+        localRightVec= glm::vec3(0, 0, 0);
+
+        x_derivative= glm::vec3(0, 0, 0);
+        y_derivative= glm::vec3(0, 0, 0);
+        for (int i = 0; i < 9; i++)
+        {
+            radianceHSH[i] = glm::vec3(0, 0, 0);
+        }
+    }
 };

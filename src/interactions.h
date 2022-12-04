@@ -145,57 +145,100 @@ void scatterRay(
 }
 //Added by Hanlin
 
-__host__ __device__
-void precomputeRadianceCache(
-    PathSegment& pathSegment,
-    glm::vec3 intersect,
-    glm::vec3 normal,
-    const Material& m,
-    thrust::default_random_engine& rng)
+float getLegendrePolynomialsValue(int index, float input)
 {
-    thrust::uniform_real_distribution<float> u01(0, 1);
-    double factor = 2 * PI/SAMPLE_COUNT;
-    // generate n sample light
-    for (int i = 0; i < SAMPLE_COUNT; i++)
+    float result = input;
+    //This need to be put into Legendre Polynomials
+
+    switch (index)
     {
-        //generate random sample ray direction
-        //This is to compute radiance cache
-
-        //Turn it into sphere coordinates
-        //Get sample ray's intersection lighting results
-
-        float up = sqrt(u01(rng)); // cos(theta)
-        float over = sqrt(1 - up * up); // sin(theta)
-        float around = u01(rng) * TWO_PI;
-
-        glm::vec3 directionNotNormal;
-        if (abs(normal.x) < SQRT_OF_ONE_THIRD) {
-            directionNotNormal = glm::vec3(1, 0, 0);
-        }
-        else if (abs(normal.y) < SQRT_OF_ONE_THIRD) {
-            directionNotNormal = glm::vec3(0, 1, 0);
-        }
-        else {
-            directionNotNormal = glm::vec3(0, 0, 1);
-        }
-
-        // Use not-normal direction to generate two perpendicular directions
-        glm::vec3 perpendicularDirection1 =
-            glm::normalize(glm::cross(normal, directionNotNormal));
-        glm::vec3 perpendicularDirection2 =
-            glm::normalize(glm::cross(normal, perpendicularDirection1));
-
-        glm::vec3 rayDir =  up * normal
-            + cos(around) * over * perpendicularDirection1
-            + sin(around) * over * perpendicularDirection2;
-
-        //Get the generated rayDir's intersection BSDF cache
-
-
-
+    case 0:
+        //(m=0,l=0)
+        //p(0,0)=1
+        result = 1;
+        break;
+    case 1:
+        //(m=-1,l=1)
+        result = -0.5f * sqrt(pow(input, 2) - 1);
+        break;
+    case 2:
+        //(m=0,l=1)
+        result = input;
+        break;
+    case  3:
+        //(m=1,l=1)
+        result = sqrt(pow(input, 2) - 1);
+        break;
+    case  4:
+        //(m=-2,l=2)
+        result = 0.125f * (1 - pow(input, 2));
+        break;
+    case  5:
+        //(m=-1,l=2)
+        result = -0.5f * input * sqrt(pow(input, 2) - 1);
+        break;
+    case  6:
+        //(m=0,l=2)
+        result = 0.5f * (3 * pow(input, 2) - 1);
+        break;
+    case  7:
+        //(m=1,l=2)
+        result = 3.f * input * sqrt(pow(input, 2) - 1);
+        break;
+    case  8:
+        //(m=2,l=2)
+        result = 3.f - 3.f * pow(input, 2);
+        break;
     }
-    //pathSegment.ray.direction = calculateRandomDirectionInHemisphere(normal, rng);
-    //pathSegment.color *= m.color;
-    //pathSegment.ray.origin = intersect;
-
+    return result;
 }
+
+//return H(m,l) 
+float getHemisphereHarmonicBasis(int index, float theta, float phi)
+{
+    float result = 0;
+    float factor = 2 * cos(theta) - 1;
+    switch (index)
+    {
+    case 0:
+        //£¨m=0,l=0£©
+        result = HemisphereHarmonicCoefficient[0] * getLegendrePolynomialsValue(index, cos(theta));
+        break;
+    case  1:
+        //(m=-1,l=1)
+        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * sin(phi) * getLegendrePolynomialsValue(index, factor);
+        break;
+    case 2:
+        //(m=0,l=1)
+        result = HemisphereHarmonicCoefficient[index] * getLegendrePolynomialsValue(index, cos(theta));
+        break;
+    case  3:
+        //(m=1,l=1)
+        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * cos(phi) * getLegendrePolynomialsValue(index, factor);
+        break;
+    case  4:
+        //(m=-2,l=2)
+        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * sin(2 * phi) * getLegendrePolynomialsValue(index, factor);
+        break;
+    case 5:
+        //(m=-1,l=2)
+        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * sin(phi) * getLegendrePolynomialsValue(index, factor);
+        break;
+    case  6:
+        //(m=0,l=2)
+        result = HemisphereHarmonicCoefficient[index] * getLegendrePolynomialsValue(index, cos(theta));
+        break;
+    case  7:
+        //(m=1,l=2)
+        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * cos(phi) * getLegendrePolynomialsValue(index, factor);
+        break;
+    case  8:
+        //(m=2,l=2)
+        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * cos(2 * phi) * getLegendrePolynomialsValue(index, factor);
+        break;
+    }
+    return result;
+}
+
+
+_

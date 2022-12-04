@@ -587,5 +587,164 @@ __host__ __device__ float sdfIntersectionTest(const Geom* geoms, const SDF* sdf,
 
     return -1.f;
 }
+#endif
+
+#if 1
+
+//For incoming point radiance cache
+__host__ __device__
+void precomputeRadianceCache(
+    PathSegment& pathSegment,
+    glm::vec3 intersect,
+    glm::vec3 normal,
+    RadianceCache& radianceCache,
+    Geom* geoms,
+    int geom_Size,
+    //mesh faces
+    Triangle* faces,
+    int faces_size,
+    Material* materials,
+    thrust::default_random_engine& rng)
+{
+    thrust::uniform_real_distribution<float> u01(0, 1);
+    float factor = 2 * PI / SAMPLE_COUNT;
+
+    glm::vec3 lamda[9];
+    for (int i = 0; i < 9; i++)
+    {
+        lamda[i] = glm::vec3(0, 0, 0);
+    }
+
+    // generate n sample light
+    for (int i = 0; i < SAMPLE_COUNT; i++)
+    {
+        //generate random sample ray direction
+        //This is to compute radiance cache
+
+        //Turn it into sphere coordinates
+        //Get sample ray's intersection lighting results
+
+        float up = sqrt(u01(rng)); // cos(theta)
+        float over = sqrt(1 - up * up); // sin(theta)
+        float around = u01(rng) * TWO_PI;
+
+        glm::vec3 directionNotNormal;
+        if (abs(normal.x) < SQRT_OF_ONE_THIRD) {
+            directionNotNormal = glm::vec3(1, 0, 0);
+        }
+        else if (abs(normal.y) < SQRT_OF_ONE_THIRD) {
+            directionNotNormal = glm::vec3(0, 1, 0);
+        }
+        else {
+            directionNotNormal = glm::vec3(0, 0, 1);
+        }
+
+        // Use not-normal direction to generate two perpendicular directions
+        glm::vec3 perpendicularDirection1 =
+            glm::normalize(glm::cross(normal, directionNotNormal));
+        glm::vec3 perpendicularDirection2 =
+            glm::normalize(glm::cross(normal, perpendicularDirection1));
+
+        glm::vec3 rayDir = up * normal
+            + cos(around) * over * perpendicularDirection1
+            + sin(around) * over * perpendicularDirection2;
+
+        //Get the generated rayDir's intersection BSDF cache
+        Ray newRay;
+        newRay.direction = rayDir;
+        newRay.origin = (intersect)+0.0001f * rayDir;
+
+
+        PathSegment newPath;
+        newPath.ray = newRay;
+        ShadeableIntersection newRayIntersection;
+        newRayIntersection.t = FLT_MAX;
+        newRayIntersection.surfaceNormal = glm::vec3(0, 0, 0);
+        newRayIntersection.materialId = -1;
+        //Only bounce one time
+        //Remember here only want diffuse color
+        //begin compute intersection(remember to use new ray)
+
+        float t;
+        glm::vec3 intersect_point;
+        glm::vec3 new_normal;
+        float t_min = FLT_MAX;
+        int hit_geom_index = -1;
+        bool outside = true;
+
+        glm::vec3 tmp_intersect;
+        glm::vec3 tmp_normal;
+
+        for (int i = 0; i < geom_Size; i++)
+        {
+            Geom& geom = geoms[i];
+
+            if (geom.type == CUBE)
+            {
+                t = boxIntersectionTest(geom, newRay, tmp_intersect, tmp_normal, outside);
+            }
+            else if (geom.type == SPHERE)
+            {
+                t = sphereIntersectionTest(geom, newRay, tmp_intersect, tmp_normal, outside);
+            }
+            else if (geom.type == MESH)
+            {
+                t = meshIntersectionTest(geom, faces, newRay, tmp_intersect, tmp_normal, outside);
+            }
+            // Compute the minimum t from the intersection tests to determine what
+            // scene geometry object was hit first.
+            if (t > 0.0f && t_min > t)
+            {
+                t_min = t;
+                intersect_point = tmp_intersect;
+                normal = tmp_normal;
+            }
+        }
+
+        if (hit_geom_index == -1 || t_min == FLT_MAX)
+        {
+            newRayIntersection.t = -1.0f;
+        }
+        else
+        {
+            //The ray hits something
+            newRayIntersection.t = t_min;
+            newRayIntersection.materialId = geoms[hit_geom_index].materialid;
+            newRayIntersection.surfaceNormal = normal;
+        }
+
+        //launched new ray got diffuse irradiance
+
+        //Get the generated rayDir's intersection BSDF cache
+        //First need to convert sample direction it into sphere coordinate
+        float r = sqrt(pow(rayDir.x, 2) + pow(rayDir.y, 2) + pow(rayDir.z, 2));
+        float theta = acos(rayDir.z / r);
+        float phi = acos(rayDir.x / (r * sin(theta)));
+
+        //need to convert raydir into hemisphere theta and phi
+        //Compute lamda(m,l)(have 9 in total since second order)
+        for (int n = 0; n < 9; n++)
+        {
+            lamda[n] = newPath.color * getHemisphereHarmonicBasis(n, theta, phi);
+        }
+    }
+
+    for (int i = 0; i < 9; i++)
+    {
+        lamda[i] *= factor;
+    }
+
+    // Now have lamda, can compute ray radiance 
+    //
+    float ray_r = sqrt(pow(pathSegment.ray.direction.x, 2) + pow(pathSegment.ray.direction.y, 2) + pow(pathSegment.ray.direction.z, 2));
+    float ray_theta = acos(pathSegment.ray.direction.z / ray_r);
+    float ray_phi = acos(pathSegment.ray.direction.x / (ray_r * sin(ray_theta)));
+
+    for (int i = 0; i < 9; i++)
+    {
+        radianceCache.radianceHSH += lamda[i] * getHemisphereHarmonicBasis(i, ray_theta, ray_phi);
+    }
+    radianceCache.position = intersect;
+}
 
 #endif
