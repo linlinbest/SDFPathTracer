@@ -26,7 +26,7 @@
 #define EDGE_AVOIDING 1
 #define USE_SDF_INTERSECTION 1
 
-#define USE_RADIANCE_CACHE 1
+#define USE_RADIANCE_CACHE 0
 
 
 #define FILENAME (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
@@ -280,7 +280,7 @@ void pathtraceInit(Scene* scene) {
 		SDF sdf;
 		sdf.minCorner = glm::vec3(-5.5f, -0.5f, -5.5f);
 		sdf.maxCorner = glm::vec3(5.5f, 10.5f, 5.5f);
-		sdf.resolution = glm::ivec3(32);
+		sdf.resolution = glm::ivec3(256);
 		sdf.gridExtent = (sdf.maxCorner - sdf.minCorner) / glm::vec3(sdf.resolution);
 
 		cudaMalloc(&dev_SDF, sizeof(SDF));

@@ -261,12 +261,19 @@ void precomputeRadianceCache(
     thrust::uniform_real_distribution<float> u01(0, 1);
     float factor = 2 * PI / SAMPLE_COUNT;
     glm::vec3 lamda[9];
+
+    glm::vec3 derivative_lamda_x[9];
+    glm::vec3 derivative_lamda_y[9];
     for (int i = 0; i < 9; i++)
     {
         lamda[i] = glm::vec3(0, 0, 0);
+        derivative_lamda_x[i] = glm::vec3(0, 0, 0);
+        derivative_lamda_y[i] = glm::vec3(0, 0, 0);
     }
     //printf("Lamda: %f, %f, %f \n", lamda[4].x, lamda[4].y, lamda[4].z);
     // generate n sample light
+
+    //N is SAMPLE_COUNT
     for (int i = 0; i < SAMPLE_COUNT; i++)
     {
         //generate random sample ray direction
@@ -348,26 +355,50 @@ void precomputeRadianceCache(
             newRayIntersection.surfaceNormal = normal;
         }
         Material intersectMat = materials[newRayIntersection.materialId];
-        //begin compute derivatives
-        
 
-
-
+        glm::vec3 q_k_normal = newRayIntersection.surfaceNormal;
 
         //launched new ray got diffuse irradiance
         //printf(" intersectMat Col %f, %f %f \n:", intersectMat.color.r, intersectMat.color.g, intersectMat.color.b);
         //Get the generated rayDir's intersection BSDF cache
         //First need to convert sample direction it into sphere coordinate
-        float r = sqrt(pow(newRay.direction.x, 2) + pow(newRay.direction.y, 2) + pow(newRay.direction.z, 2));
-        float theta = acos(newRay.direction.z / r);
-        float phi = acos(newRay.direction.x / (r * sin(theta)));
 
+        float r_k = sqrt(pow(newRay.direction.x, 2) + pow(newRay.direction.y, 2) + pow(newRay.direction.z, 2));
+        float theta_k = acos(newRay.direction.z / r_k);
+        float phi_k = acos(newRay.direction.x / (r_k * sin(theta_k)));
+
+        //check again
+        glm::vec3 q_k = getPointOnRay(newRay, t);
+        float test_r_k = glm::length(q_k - newRay.origin);
+        glm::vec3 direction = q_k - newRay.origin;
+        float test_r = glm::length(q_k - newRay.origin);
+        float test_theta_k = acos(direction.z / test_r);
+        float test_phi_k = acos(direction.x / (test_r * sin(test_theta_k)));
+
+        //compute derivative x
+        float derivative_theta_k_x = -cos(theta_k) * cos(phi_k) / r_k;
+        float derivative_phi_k_x = sin(phi_k) / (r_k * sin(theta_k));
+
+        glm::vec3 normalized_q_k_normal = glm::normalize(q_k_normal);
+
+       glm::vec3 normalized_direction = glm::normalize(direction);
+        float cos_ep_k = -glm::dot(normalized_q_k_normal, normalized_direction);
+
+        float derivative_omega_k_x = ((2 * PI) / SAMPLE_COUNT) * ((test_r_k * q_k_normal.x + 3 * direction.x * cos_ep_k) / (pow(test_r_k, 2.f) * cos_ep_k));
+
+
+     //compute derivative y
+        float derivative_theta_k_y = -(cos(theta_k) * sin(phi_k)) / r_k;
+        float derivative_phi_k_y = -cos(phi_k) / (r_k * sin(theta_k));
+     // 
        // printf(" test sphere %f, %f %f \n:", r, theta, phi);
         //need to convert raydir into hemisphere theta and phi
         //Compute lamda(m,l)(have 9 in total since second order)
         for (int n = 0; n < 9; n++)
         {
-            lamda[n] = intersectMat.color * getHemisphereHarmonicBasis(n, theta, phi);
+            lamda[n] = intersectMat.color * getHemisphereHarmonicBasis(n, theta_k, phi_k);
+            float derivative_H_x = derivative_theta_k_x * getDerivativeH_Theta(n, theta_k, phi_k) + derivative_phi_k_x * getDerivativeH_Phi(n, theta_k, phi_k);
+            derivative_lamda_x[n] = intersectMat.color * (derivative_omega_k_x * getHemisphereHarmonicBasis(n, theta_k, phi_k) + (2 * PI) / SAMPLE_COUNT * derivative_H_x);
         }
     }
 
@@ -394,13 +425,14 @@ void precomputeRadianceCache(
    // printf(" radianceCache.radianceHSH %f, %f %f \n:", radianceCache.radianceHSH.x, radianceCache.radianceHSH.y, radianceCache.radianceHSH.z);
     radianceCache.position = intersect;
 }
-
-void computeDerivative_X()
+__host__ __device__
+float getDerivativeH_Theta(int index,int theta,int phi)
 {
 
 }
 
-void computeDerivative_Y()
+__host__ __device__
+float getDerivativeH_Phi(int index, int theta, int phi)
 {
 
 }
