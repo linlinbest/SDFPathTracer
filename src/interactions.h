@@ -144,7 +144,7 @@ void scatterRay(
 
 }
 //Added by Hanlin
-
+__host__ __device__
 float getLegendrePolynomialsValue(int index, float input)
 {
     float result = input;
@@ -159,7 +159,7 @@ float getLegendrePolynomialsValue(int index, float input)
         break;
     case 1:
         //(m=-1,l=1)
-        result = -0.5f * sqrt(pow(input, 2) - 1);
+        result = -0.5f * sqrt(pow(input, 2.f) - 1.f);
         break;
     case 2:
         //(m=0,l=1)
@@ -167,46 +167,48 @@ float getLegendrePolynomialsValue(int index, float input)
         break;
     case  3:
         //(m=1,l=1)
-        result = sqrt(pow(input, 2) - 1);
+        result = sqrt(pow(input, 2.f) - 1.f);
         break;
     case  4:
         //(m=-2,l=2)
-        result = 0.125f * (1 - pow(input, 2));
+        result = 0.125f * (1.f - pow(input, 2.f));
         break;
     case  5:
         //(m=-1,l=2)
-        result = -0.5f * input * sqrt(pow(input, 2) - 1);
+        result = -0.5f * input * sqrt(pow(input, 2.f) - 1.f);
         break;
     case  6:
         //(m=0,l=2)
-        result = 0.5f * (3 * pow(input, 2) - 1);
+        result = 0.5f * (3.f * pow(input, 2.f) - 1.f);
         break;
     case  7:
         //(m=1,l=2)
-        result = 3.f * input * sqrt(pow(input, 2) - 1);
+        result = 3.f * input * sqrt(pow(input, 2.f) - 1.f);
         break;
     case  8:
         //(m=2,l=2)
-        result = 3.f - 3.f * pow(input, 2);
+        result = 3.f - 3.f * pow(input, 2.f);
         break;
     }
     return result;
 }
 
 //return H(m,l) 
-float getHemisphereHarmonicBasis(int index, float theta, float phi)
+__host__ __device__
+float getHemisphereHarmonicBasis(const int index, const float theta,const float phi)
 {
     float result = 0;
-    float factor = 2 * cos(theta) - 1;
+    float factor = 2.f * cos(theta) - 1.f;
+    printf("Result: %f \n", result);
     switch (index)
     {
     case 0:
         //£¨m=0,l=0£©
-        result = HemisphereHarmonicCoefficient[0] * getLegendrePolynomialsValue(index, cos(theta));
+        result = HemisphereHarmonicCoefficient[index] * getLegendrePolynomialsValue(index, cos(theta));
         break;
     case  1:
         //(m=-1,l=1)
-        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * sin(phi) * getLegendrePolynomialsValue(index, factor);
+        result =float(sqrt(2.f)) * HemisphereHarmonicCoefficient[index] * sin(phi) * getLegendrePolynomialsValue(index, factor);
         break;
     case 2:
         //(m=0,l=1)
@@ -214,15 +216,15 @@ float getHemisphereHarmonicBasis(int index, float theta, float phi)
         break;
     case  3:
         //(m=1,l=1)
-        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * cos(phi) * getLegendrePolynomialsValue(index, factor);
+        result = float(sqrt(2.f)) * HemisphereHarmonicCoefficient[index] * cos(phi) * getLegendrePolynomialsValue(index, factor);
         break;
     case  4:
         //(m=-2,l=2)
-        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * sin(2 * phi) * getLegendrePolynomialsValue(index, factor);
+        result = float(sqrt(2.f)) * HemisphereHarmonicCoefficient[index] * sin(2 * phi) * getLegendrePolynomialsValue(index, factor);
         break;
     case 5:
         //(m=-1,l=2)
-        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * sin(phi) * getLegendrePolynomialsValue(index, factor);
+        result = float(sqrt(2.f)) * HemisphereHarmonicCoefficient[index] * sin(phi) * getLegendrePolynomialsValue(index, factor);
         break;
     case  6:
         //(m=0,l=2)
@@ -230,15 +232,175 @@ float getHemisphereHarmonicBasis(int index, float theta, float phi)
         break;
     case  7:
         //(m=1,l=2)
-        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * cos(phi) * getLegendrePolynomialsValue(index, factor);
+        result = float(sqrt(2.f)) * HemisphereHarmonicCoefficient[index] * cos(phi) * getLegendrePolynomialsValue(index, factor);
         break;
     case  8:
         //(m=2,l=2)
-        result = sqrt(2) * HemisphereHarmonicCoefficient[index] * cos(2 * phi) * getLegendrePolynomialsValue(index, factor);
+        result = float(sqrt(2.f)) * HemisphereHarmonicCoefficient[index] * cos(2 * phi) * getLegendrePolynomialsValue(index, factor);
         break;
     }
+
     return result;
 }
 
+//For incoming point radiance cache
+__host__ __device__
+void precomputeRadianceCache(
+    PathSegment& pathSegment,
+    glm::vec3 intersect,
+    glm::vec3 normal,
+    RadianceCache& radianceCache,
+    Geom* geoms,
+    int geom_Size,
+    //mesh faces
+    Triangle* faces,
+    int faces_size,
+    Material* materials,
+    thrust::default_random_engine& rng)
+{
+    thrust::uniform_real_distribution<float> u01(0, 1);
+    float factor = 2 * PI / SAMPLE_COUNT;
+    glm::vec3 lamda[9];
+    for (int i = 0; i < 9; i++)
+    {
+        lamda[i] = glm::vec3(0, 0, 0);
+    }
+    //printf("Lamda: %f, %f, %f \n", lamda[4].x, lamda[4].y, lamda[4].z);
+    // generate n sample light
+    for (int i = 0; i < SAMPLE_COUNT; i++)
+    {
+        //generate random sample ray direction
+        //This is to compute radiance cache
 
-_
+        //Turn it into sphere coordinates
+        //Get sample ray's intersection lighting results
+
+        Ray newRay;
+        newRay.direction = calculateRandomDirectionInHemisphere(normal, rng);
+        newRay.direction = glm::normalize(newRay.direction);
+        //Get the generated rayDir's intersection BSDF cache
+        newRay.origin = intersect;
+       // printf("newRay origin: %f,%f,%f \n", newRay.origin.x, newRay.origin.y, newRay.origin.z);
+     //   printf("newRay.direction: %f, %f, %f\n:", newRay.direction.x,newRay.direction.y,newRay.direction.z);
+
+
+        PathSegment newPath;
+        newPath.ray = newRay;
+
+        ShadeableIntersection newRayIntersection;
+        newRayIntersection.t = FLT_MAX;
+        newRayIntersection.surfaceNormal = glm::vec3(0, 0, 0);
+        newRayIntersection.materialId = 0;
+        //Only bounce one time
+        //Remember here only want diffuse color
+        //begin compute intersection(remember to use new ray)
+
+        float t;
+        glm::vec3 intersect_point;
+        glm::vec3 new_normal;
+        float t_min = FLT_MAX;
+        int hit_geom_index = -1;
+        bool outside = true;
+
+        glm::vec3 tmp_intersect;
+        glm::vec3 tmp_normal;
+
+
+        for (int i = 0; i < geom_Size; i++)
+        {
+            Geom& geom = geoms[i];
+        //    printf("geom.materialID: %d\n:", geom.materialid);
+            if (geom.type == CUBE)
+            {
+                t = boxIntersectionTest(geom, newRay, tmp_intersect, tmp_normal, outside);
+            }
+            else if (geom.type == SPHERE)
+            {
+              //  printf("Hit test 2\n");
+                t = sphereIntersectionTest(geom, newRay, tmp_intersect, tmp_normal, outside);
+            }
+            else if (geom.type == MESH)
+            {
+                t = meshIntersectionTest(geom, faces, newRay, tmp_intersect, tmp_normal, outside);
+            }
+            // Compute the minimum t from the intersection tests to determine what
+            // scene geometry object was hit first.
+
+            if (t > 0.0f && t_min > t)
+            {
+                //printf("Intersect with geom \n");
+                t_min = t;
+                hit_geom_index = i;
+                intersect_point = tmp_intersect;
+                normal = tmp_normal;
+            }
+        }
+
+        if (hit_geom_index == -1 || t_min == FLT_MAX)
+        {
+            newRayIntersection.t = -1.0f;
+        }
+        else
+        {
+            //The ray hits something
+            newRayIntersection.t = t_min;
+            newRayIntersection.materialId = geoms[hit_geom_index].materialid;
+            newRayIntersection.surfaceNormal = normal;
+        }
+        Material intersectMat = materials[newRayIntersection.materialId];
+        //begin compute derivatives
+        
+
+
+
+
+        //launched new ray got diffuse irradiance
+        //printf(" intersectMat Col %f, %f %f \n:", intersectMat.color.r, intersectMat.color.g, intersectMat.color.b);
+        //Get the generated rayDir's intersection BSDF cache
+        //First need to convert sample direction it into sphere coordinate
+        float r = sqrt(pow(newRay.direction.x, 2) + pow(newRay.direction.y, 2) + pow(newRay.direction.z, 2));
+        float theta = acos(newRay.direction.z / r);
+        float phi = acos(newRay.direction.x / (r * sin(theta)));
+
+       // printf(" test sphere %f, %f %f \n:", r, theta, phi);
+        //need to convert raydir into hemisphere theta and phi
+        //Compute lamda(m,l)(have 9 in total since second order)
+        for (int n = 0; n < 9; n++)
+        {
+            lamda[n] = intersectMat.color * getHemisphereHarmonicBasis(n, theta, phi);
+        }
+    }
+
+    for (int i = 0; i < 9; i++)
+    {
+        lamda[i] *= factor;
+    }
+
+    // Now have lamda, can compute ray radiance 
+    //
+    float ray_r = sqrt(pow(pathSegment.ray.direction.x, 2) + pow(pathSegment.ray.direction.y, 2) + pow(pathSegment.ray.direction.z, 2));
+    float ray_theta = acos(pathSegment.ray.direction.z / ray_r);
+    float ray_phi = acos(pathSegment.ray.direction.x / (ray_r * sin(ray_theta)));
+
+    for (int i = 0; i < 9; i++)
+    {
+        //Seems to have problem here
+        radianceCache.radianceHSH += lamda[i] * getHemisphereHarmonicBasis(i, ray_theta, ray_phi);
+    }
+    //if (radianceCache.radianceHSH != glm::vec3(0, 0, 0))
+    //{
+    //    printf(" radianceCache.radianceHSH %f, %f %f \n:", radianceCache.radianceHSH.x, radianceCache.radianceHSH.y, radianceCache.radianceHSH.z);
+    //}
+   // printf(" radianceCache.radianceHSH %f, %f %f \n:", radianceCache.radianceHSH.x, radianceCache.radianceHSH.y, radianceCache.radianceHSH.z);
+    radianceCache.position = intersect;
+}
+
+void computeDerivative_X()
+{
+
+}
+
+void computeDerivative_Y()
+{
+
+}

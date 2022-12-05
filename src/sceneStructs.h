@@ -8,7 +8,7 @@
 #define BACKGROUND_COLOR (glm::vec3(0.0f))
 #define USE_BVH_FOR_INTERSECTION 1
 //Just for testing
-#define SAMPLE_COUNT 500
+#define SAMPLE_COUNT 150
 
 //Hemisphere Harmonic Coefficient
 //reference: 
@@ -36,10 +36,6 @@
 static const float HemisphereHarmonicCoefficient[9] = { HSH_COEFFICIENT_0 ,HSH_COEFFICIENT_1 ,HSH_COEFFICIENT_2 ,
 HSH_COEFFICIENT_3 ,HSH_COEFFICIENT_4 ,HSH_COEFFICIENT_5 ,HSH_COEFFICIENT_6,HSH_COEFFICIENT_7,HSH_COEFFICIENT_8 };
 
-void getCorrespondHemisphereHarmonicBasisFunc(int num)
-{
-
-}
 
 enum GeomType {
     SPHERE,
@@ -193,12 +189,8 @@ struct RadianceCache
         localUpVec= glm::vec3(0, 0, 0);
         localNormalVec= glm::vec3(0, 0, 0);
         localRightVec= glm::vec3(0, 0, 0);
-
+        radianceHSH = glm::vec3(0, 0, 0);
         x_derivative= glm::vec3(0, 0, 0);
         y_derivative= glm::vec3(0, 0, 0);
-        for (int i = 0; i < 9; i++)
-        {
-            radianceHSH[i] = glm::vec3(0, 0, 0);
-        }
     }
 };

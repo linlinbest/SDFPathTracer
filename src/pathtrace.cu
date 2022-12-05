@@ -158,8 +158,8 @@ static bool sdfGenerated = false;
 #endif
 
 #if USE_RADIANCE_CACHE
-static Triangle* dev_faces = NULL;
-
+//static Triangle* dev_faces = NULL;
+static bool radianceCached = false;
 static RadianceCache* dev_radianceCache = NULL;
 static ShadeableIntersection* dev_radianceIntersections=NULL;
 #endif
@@ -209,15 +209,6 @@ void pathtraceInit(Scene* scene) {
 	const Camera& cam = hst_scene->state.camera;
 	const int pixelcount = cam.resolution.x * cam.resolution.y;
 
-#if USE_RADIANCE_CACHE
-	vector<RadianceCache> radianceCacheData;
-	for (int i = 0; i < pixelcount ; i++)
-	{
-		RadianceCache emptyCache;
-		radianceCacheData.push_back(emptyCache);
-	}
-#endif
-
 	cudaMalloc(&dev_image, pixelcount * sizeof(glm::vec3));
 	cudaMemset(dev_image, 0, pixelcount * sizeof(glm::vec3));
 
@@ -236,8 +227,6 @@ void pathtraceInit(Scene* scene) {
 	cudaMalloc(&dev_faces, scene->faces.size() * sizeof(Triangle));
 	cudaMemcpy(dev_faces, scene->faces.data(), scene->faces.size() * sizeof(Triangle), cudaMemcpyHostToDevice);
 #endif
-
-
 
 #else
 	cudaMalloc(&dev_faces, scene->faces.size() * sizeof(Triangle));
@@ -259,12 +248,21 @@ void pathtraceInit(Scene* scene) {
 #endif
 
 #if USE_RADIANCE_CACHE
+	vector<RadianceCache> radianceCacheData;
+	for (int i = 0; i < pixelcount; i++)
+	{
+		RadianceCache emptyCache;
+		radianceCacheData.push_back(emptyCache);
+	}
 	//Same amount as the intersection
 	cudaMalloc(&dev_radianceCache, pixelcount * sizeof(RadianceCache));
 	cudaMemcpy(dev_radianceCache, radianceCacheData.data(), radianceCacheData.size() * sizeof(RadianceCache), cudaMemcpyHostToDevice);
 
 	cudaMalloc(&dev_radianceIntersections, pixelcount * sizeof(ShadeableIntersection));
 	cudaMemset(dev_radianceIntersections, 0, pixelcount * sizeof(ShadeableIntersection));
+
+	cudaMalloc(&dev_faces, scene->faces.size() * sizeof(Triangle));
+	cudaMemcpy(dev_faces, scene->faces.data(), scene->faces.size() * sizeof(Triangle), cudaMemcpyHostToDevice);
 #endif
 
 #if DENOISE_TIME
@@ -282,7 +280,7 @@ void pathtraceInit(Scene* scene) {
 		SDF sdf;
 		sdf.minCorner = glm::vec3(-5.5f, -0.5f, -5.5f);
 		sdf.maxCorner = glm::vec3(5.5f, 10.5f, 5.5f);
-		sdf.resolution = glm::ivec3(352);
+		sdf.resolution = glm::ivec3(32);
 		sdf.gridExtent = (sdf.maxCorner - sdf.minCorner) / glm::vec3(sdf.resolution);
 
 		cudaMalloc(&dev_SDF, sizeof(SDF));
@@ -576,7 +574,6 @@ __global__ void computeRadianceCache(
 {
 	int path_idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (path_idx >= num_paths || pathSegments[path_idx].remainingBounces <= 0) return;
-	//一一对应
 	ShadeableIntersection intersection = shadeableIntersections[path_idx];
 	if (intersection.t <= 0.0f)
 	{
@@ -588,6 +585,7 @@ __global__ void computeRadianceCache(
 	//For every ray intersection, begin compute radiance Cache
 	thrust::default_random_engine rng = makeSeededRandomEngine(iter, path_idx, 0);
 	glm::vec3 intersect = getPointOnRay(pathSegments[path_idx].ray, intersection.t);
+	//printf("intersection normal: %f,%f,%f \n", intersection.surfaceNormal.x, intersection.surfaceNormal.y, intersection.surfaceNormal.z);
 	precomputeRadianceCache(pathSegments[path_idx], intersect, intersection.surfaceNormal, 
 		radianceCache[path_idx], sceneGeomtry, geoms_size, triangleFaces, faceNum, materials,rng);
 }
@@ -744,8 +742,6 @@ void pathtrace(int frame, int iter) {
 	// clean shading chunks
 	cudaMemset(dev_intersections, 0, pixelcount * sizeof(ShadeableIntersection));
 
-
-
 	bool iterationComplete = false;
 	while (!iterationComplete) {
 
@@ -756,24 +752,18 @@ void pathtrace(int frame, int iter) {
 		dim3 numblocksPathSegmentTracing = (num_paths + blockSize1d - 1) / blockSize1d;
 
 #if USE_RADIANCE_CACHE
-		if (depth == 0 && iter != 1)
-		{
-			//use first intersection to calculate radiance cache 
-			cudaMemcpy(dev_intersections, dev_radianceIntersections, pixelcount * sizeof(ShadeableIntersection), cudaMemcpyDeviceToDevice);
-		}
-		else
-		{
-			computeIntersections << <numblocksPathSegmentTracing, blockSize1d >> > (
-				depth, num_paths, dev_paths, dev_geoms, hst_scene->geoms.size(), dev_faces, hst_scene->faces.size(), dev_intersections);
 
-			if (depth == 0 && iter == 1)
-			{
-				cudaMemcpy(dev_radianceIntersections, dev_intersections, pixelcount * sizeof(ShadeableIntersection), cudaMemcpyDeviceToDevice);
-			}
-		}
-		computeRadianceCache << <numblocksPathSegmentTracing, blockSize1d >> > (iter, num_paths, dev_intersections, dev_paths,
-			dev_materials, dev_radianceCache, dev_geoms, hst_scene->geoms.size(), dev_faces, hst_scene->faces.size());
+		int cacheDepth = 1;
 
+		computeIntersections << <numblocksPathSegmentTracing, blockSize1d >> > (
+			cacheDepth, num_paths, dev_paths, dev_geoms, hst_scene->geoms.size(), dev_SDF, dev_SDFGrids, dev_radianceIntersections);
+
+		if (!radianceCached)
+		{
+			computeRadianceCache << <numblocksPathSegmentTracing, blockSize1d >> > (iter, num_paths, dev_radianceIntersections, dev_paths,
+				dev_materials, dev_radianceCache, dev_geoms, hst_scene->geoms.size(), dev_faces, hst_scene->faces.size());
+			radianceCached = true;
+		}
 #endif
 
 
