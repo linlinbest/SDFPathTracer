@@ -502,13 +502,14 @@ __global__ void generateSDFwithBVH(const SDF* sdf, SDFGrid* SDFGrids, const BVHN
     if (minTriangle == nullptr) return;
     int geomId = minTriangle->geomId;
 
-    glm::vec3 triCenter = (minTriangle->point1 + minTriangle->point2 + minTriangle->point3) / 3.f;
-    glm::vec3 worldNor = glm::normalize(triCenter - voxelPos);
-    glm::vec3 localNor = multiplyMV(geoms[geomId].inverseTransform, glm::vec4(worldNor, 0.f));
+    bool isInside = false;
+    int isOut1 = glm::dot(voxelPos - minTriangle->point1, minTriangle->normal1) >= 0 ? 1 : -1;
+    int isOut2 = glm::dot(voxelPos - minTriangle->point2, minTriangle->normal2) >= 0 ? 1 : -1;
+    int isOut3 = glm::dot(voxelPos - minTriangle->point3, minTriangle->normal3) >= 0 ? 1 : -1;
+    isInside = isOut1 + isOut2 + isOut3 > 0 ? false : true;
 
-    glm::vec3 localtriNor = multiplyMV(geoms[geomId].inverseTransform, glm::vec4(minTriangle->normal1, 0.f));
     // if inside
-    if (glm::dot(localNor, localtriNor) > 0.f)
+    if (isInside)
     {
         SDFGrids[idx].dist = -minUdf;
     }
@@ -517,7 +518,16 @@ __global__ void generateSDFwithBVH(const SDF* sdf, SDFGrid* SDFGrids, const BVHN
         SDFGrids[idx].dist = minUdf;
     }
 
-    SDFGrids[idx].geomId = minTriangle->geomId;
+    if (minUdf > 0.f)
+    {
+        SDFGrids[idx].geomId = minTriangle->geomId;
+    }
+    else
+    {
+        SDFGrids[idx].geomId = -1;
+    }
+
+    //SDFGrids[idx].geomId = minTriangle->geomId;
 }
 
 
@@ -547,47 +557,36 @@ __global__ void generateSDF(const SDF* sdf, SDFGrid* SDFGrids, const Triangle* t
         }
     }
 
-    /*if (minUdf < 0.001f)
-    {
-        printf("%d, %d, %d, %.2f, %.2f, %.2f, %f\n", x, y, z, a, b, c, minUdf);
-    }*/
-
     // will crash without this
     if (minTriangle == nullptr) return;
     int geomId = minTriangle->geomId;
 
-    glm::vec3 triCenter = (minTriangle->point1 + minTriangle->point2 + minTriangle->point3) / 3.f;
-    glm::vec3 worldNor = glm::normalize(triCenter - voxelPos);
-    glm::vec3 localNor = multiplyMV(geoms[geomId].inverseTransform, glm::vec4(worldNor, 0.f));
+    bool isInside = false;
+    int isOut1 = glm::dot(voxelPos - minTriangle->point1, minTriangle->normal1) >= 0 ? 1 : -1;
+    int isOut2 = glm::dot(voxelPos - minTriangle->point2, minTriangle->normal2) >= 0 ? 1 : -1;
+    int isOut3 = glm::dot(voxelPos - minTriangle->point3, minTriangle->normal3) >= 0 ? 1 : -1;
+    isInside = isOut1 + isOut2 + isOut3 > 0 ? false : true;
 
-    glm::vec3 localtriNor = multiplyMV(geoms[geomId].inverseTransform, glm::vec4(minTriangle->normal1, 0.f));
     // if inside
-    if (glm::dot(localNor, localtriNor) > 0.f)
+    if (isInside > 0.f)
     {
         SDFGrids[idx].dist = -minUdf;
-        //printf("%d, %d, %d\n", x, y, z);
     }
     else
     {
         SDFGrids[idx].dist = minUdf;
     }
 
-    ////////////////// ??
-    if (minUdf < 0.5f)
+    /*if (minUdf < 0.5f)
     {
         SDFGrids[idx].geomId = minTriangle->geomId;
     }
     else
     {
         SDFGrids[idx].geomId = -1;
-    }
+    }*/
 
-    // ?? bug ??
-    SDFGrids[idx].geomId = minTriangle->geomId;
-    ////////////////
-
-    //printf("%d, %d, %d, %.2f\n", x, y, z, SDFGrids[idx].dist);
-    
+    SDFGrids[idx].geomId = minTriangle->geomId;    
 }
 
 
@@ -661,8 +660,16 @@ __host__ __device__ float sdfIntersectionTest(const Geom* geoms, const SDF* sdf,
             continue;
         }
 
+
         if (currSDFGrid->dist < 0.01f)
         {
+            // temporary solution for rerfaction effect
+            if (lastGeomId == -1)
+            {
+                t += 0.05f;
+                continue;
+            }
+
             intersectionPoint = lastRayMarchPos;
             normal = estimateNormal(lastRayMarchPos, sdf, SDFGrids);
             *hitGeomId = lastGeomId;
@@ -678,7 +685,7 @@ __host__ __device__ float sdfIntersectionTest(const Geom* geoms, const SDF* sdf,
         if (t >= 100.f)
         {
             // Gone too far; give up
-            return 100.f;
+            return -1.f;
         }
     }
 
